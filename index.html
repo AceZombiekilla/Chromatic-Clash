@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chromatic Clash Browser Game</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div>
+      <h1>Chromatic Clash</h1>
+      <p id="status">Click New Game to start.</p>
+    </div>
+    <div class="topButtons">
+      <button id="newGameBtn">New Game</button>
+      <button id="muteBtn">Sound: On</button>
+      <button id="rulesBtn">Rules</button>
+    </div>
+  </header>
+
+  <main class="table">
+    <section class="sidePile botSide">
+      <div class="deckStats botStats">
+        <b>Warren Bot</b>
+        <span>Deck: <em id="botDeck">0</em></span>
+        <span>Hand: <em id="botHandCount">0</em></span>
+        <span>Discard: <em id="botDiscardCount">0</em></span>
+      </div>
+      <div class="pileWrap" id="botDiscardPile">
+        <h2>Bot Discard</h2>
+        <p>Hover/click to inspect</p>
+        <div id="botDiscardTop" class="pileCard"></div>
+      </div>
+    </section>
+
+    <section class="board">
+      <div class="botHandArea">
+        <div id="botHandBacks" class="botHandBacks"></div>
+      </div>
+      <div class="fieldZone botFieldZone">
+        <h2>Warren Bot Field</h2>
+        <div id="botField" class="cardRow fieldRow"></div>
+      </div>
+      <div class="fieldZone playerFieldZone">
+        <h2>Your Field</h2>
+        <div id="playerField" class="cardRow fieldRow"></div>
+      </div>
+      <div class="playerHandPanel">
+        <h2>Your Hand</h2>
+        <p>Hover to read. Click/tap a card or drag it to Your Field to choose an ability.</p>
+        <div id="playerHand" class="cardRow handRow"></div>
+      </div>
+    </section>
+
+    <section class="sidePile playerSide">
+      <div class="deckStats playerStats">
+        <b>You</b>
+        <span>Deck: <em id="playerDeck">0</em></span>
+        <span>Hand: <em id="playerHandCount">0</em></span>
+        <span>Discard: <em id="playerDiscardCount">0</em></span>
+      </div>
+      <div class="pileWrap" id="playerDiscardPile">
+        <h2>Your Discard</h2>
+        <p>Hover/click to inspect</p>
+        <div id="playerDiscardTop" class="pileCard"></div>
+      </div>
+    </section>
+  </main>
+
+  <section class="bottomBar">
+    <button id="chooseBtn">Choose Card / Ability</button>
+    <button id="endTurnBtn">End Turn</button>
+    <div class="logPanel">
+      <b>Game Log</b>
+      <div id="log"></div>
+    </div>
+  </section>
+</div>
+
+<div id="hoverPreview" class="hoverPreview hidden">
+  <img id="hoverPreviewImg" alt="Large card preview" />
+  <div>
+    <h3 id="hoverPreviewTitle"></h3>
+    <p id="hoverPreviewText"></p>
+  </div>
+</div>
+
+<div id="discardPreview" class="discardPreview hidden">
+  <h3 id="discardPreviewTitle"></h3>
+  <div id="discardPreviewCards"></div>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="modalBox">
+    <button id="closeModal" class="close">×</button>
+    <button id="hideModal" class="minimize">Hide</button>
+    <h2 id="modalTitle"></h2>
+    <p id="modalText"></p>
+    <div id="modalCardArea" class="modalCards"></div>
+    <div id="modalActions" class="modalActions"></div>
+  </div>
+</div>
+
+<button id="showModalBtn" class="showModalBtn hidden">Show Popup</button>
+
+<script src="game.js"></script>
+</body>
+</html>
