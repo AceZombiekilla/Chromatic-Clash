@@ -1,30 +1,15 @@
-Chromatic Clash Browser Layout v6
+Chromatic Clash Browser Game - v9 UI Update
 
-Open index.html in Chrome/ChromeOS.
+Open index.html in Chrome/ChromeOS or upload this folder to a static host.
 
-Updates in v6:
-- Blue and Black are the only effects that counter/stop a played card.
-- Red off-turn discard draws cards only and does not counter/stop the card.
-- Updated Blue card image and ability.
-- Updated Black card image and ability.
-- Yellow cards show a + badge when cards are trapped underneath. Hover/click Yellow to see trapped cards.
-- Rules popup now shows images and abilities for all cards.
-- New Game plays shuffle and dealing sounds.
-- Hand cards are larger.
-- Bot deck/hand/discard counts are rendered from the actual game arrays.
-- Popups can be hidden and reopened with Show Popup without losing the choice.
-- Player can drag a hand card onto Your Field to play it, or click/tap it as before.
+Updated in this version:
+- Game log is hidden by default.
+- Show Game Log opens a left-side log box between Warren Bot's deck info and discard pile.
+- Choose Card / Ability and End Turn moved to the right side and made thinner.
+- Field labels now show the active turn next to the correct field.
+- Rules popup opens automatically when the game first starts.
+- Card display and modal card selection are larger and better spaced.
+- Win popup added with game logo and New Game button.
+- Loss popup added with game logo and New Game button.
 
-
-V7 updates:
-- Dragging a hand card onto Your Field now opens the same ability-choice popup instead of playing immediately.
-- Green Field now lets you choose which card to return from your discard pile.
-- Green Discard now waits for your top-5 choice before ending the turn.
-- Uploaded MP3 sound effects are included. Background guitar music loops quietly during play.
-- New Game plays the uploaded start/deal sounds. Draw, reaction, Yellow trap, and win sounds use the uploaded files.
-
-
-v8 Reaction Fix:
-- Reactions are only legal from cards in hand.
-- Warren Bot can no longer use cards on its field of play as reactions.
-- Blue now counters by discarding Blue plus any other card from hand.
+Keep the index.html, game.js, styles.css, and assets folder together.

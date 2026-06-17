@@ -11,3 +11,32 @@
 .trappedList{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;border-top:1px solid #5d5268;padding-top:10px}.trappedList h3{width:100%;margin:0;color:var(--gold)}
 .rulesGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:8px}.ruleCard{border:1px solid #60536e;background:#0d0d12;border-radius:12px;padding:8px}.ruleCard img{width:100%;aspect-ratio:2.5/3.5;object-fit:cover;border-radius:8px;border:1px solid #ddd}.ruleCard h3{margin:6px 0 4px;color:var(--gold)}.ruleCard p{font-size:12px;line-height:1.25;color:#eee;white-space:pre-line}
 @media(max-width:900px){.handRow .card{width:104px;height:148px}.rulesGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.showModalBtn{bottom:12px}}
+
+/* v9 UI layout update */
+html,body{overflow:hidden}
+.table{height:calc(100vh - 74px);grid-template-columns:190px 1fr 150px}
+.bottomBar{display:none}
+.sidePile{justify-content:flex-start;gap:10px;overflow:hidden}
+.playerSide{gap:10px}
+.sideControls{display:grid;gap:9px;background:rgba(17,17,26,.9);border:1px solid #2f2a36;border-radius:10px;padding:8px}
+.thinBtn{width:100%;border-radius:11px;padding:10px 8px;font-size:13px;line-height:1.05;min-height:42px}
+.logToggle{min-height:36px;padding:8px 6px}
+.sideLogPanel{border:1px solid #2f2a36;border-radius:10px;background:rgba(16,16,24,.94);padding:8px;min-height:190px;max-height:270px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.sideLogHeader{display:flex;justify-content:space-between;align-items:center;gap:6px;color:var(--gold)}
+.miniBtn{border-radius:8px;padding:5px 8px;font-size:11px;box-shadow:none;background:linear-gradient(#eeeeee,#aaaaaa);color:#111}
+#log{height:220px;max-height:230px;overflow:auto;font-size:12px;color:#ddd;display:flex;flex-direction:column-reverse;gap:4px;padding-right:4px}
+.pileWrap{min-height:190px;max-height:260px}
+.board{background:linear-gradient(rgba(66,66,66,.68),rgba(66,66,66,.68)), url('assets/logo.png') center/contain no-repeat}
+.botHandArea{height:86px}.botHandBacks{gap:8px}
+.fieldZone{height:32%;padding:25px 18px 12px}.botFieldZone{top:86px}.playerFieldZone{top:calc(86px + 32%)}
+.fieldZone h2{font-size:17px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.turnBadge{font-size:12px;border:1px solid var(--gold);color:#111;background:var(--gold);border-radius:999px;padding:2px 7px;display:none}
+.turnBadge.active{display:inline-block}
+.cardRow{gap:14px;min-height:125px}.fieldRow .card{width:112px;height:157px}.fieldRow .card.small{width:92px;height:132px}
+.playerHandPanel{min-width:min(960px,92%);padding:8px 12px}.handRow{min-height:216px;gap:16px}.handRow .card{width:150px;height:210px}.handRow .label{font-size:13px}.handRow .trap{font-size:12px}
+.hoverPreview{width:min(500px,36vw);grid-template-columns:175px 1fr}.hoverPreview img{width:175px}.hoverPreview h3{font-size:26px}.hoverPreview p{font-size:15px}
+.modalBox{width:min(97vw,980px);padding:20px}.modalCards{grid-template-columns:repeat(3,minmax(180px,1fr));gap:18px}.choiceCard{padding:10px}.choiceCard img{width:100%;max-height:380px;object-fit:contain}.choiceCard b{font-size:20px}.choiceCard small{font-size:13px}.rulesGrid{grid-template-columns:repeat(3,minmax(180px,1fr));gap:16px}.ruleCard{padding:10px}.ruleCard img{max-height:380px;object-fit:contain}.ruleCard h3{font-size:20px}.ruleCard p{font-size:13px}
+.gameOverLogo{display:block;width:min(420px,80vw);margin:10px auto 16px;border-radius:18px;border:2px solid var(--gold);box-shadow:0 0 22px rgba(232,197,110,.35)}
+.gameOverText{text-align:center;font-size:18px;color:#fff;margin:8px 0 12px!important}
+
+@media(max-width:900px){html,body{overflow:auto}.table{height:auto;min-height:860px;grid-template-columns:1fr}.sidePile{overflow:visible}.sideControls{grid-template-columns:1fr 1fr}.sideLogPanel{max-height:300px}.modalCards,.rulesGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.handRow .card{width:112px;height:157px}.fieldRow .card{width:92px;height:129px}.hoverPreview{width:92vw;grid-template-columns:120px 1fr}.hoverPreview img{width:120px}}

@@ -28,6 +28,16 @@
         <span>Hand: <em id="botHandCount">0</em></span>
         <span>Discard: <em id="botDiscardCount">0</em></span>
       </div>
+
+      <button id="logToggleBtn" class="thinBtn logToggle">Show Game Log</button>
+      <div id="sideLogPanel" class="sideLogPanel hidden">
+        <div class="sideLogHeader">
+          <b>Game Log</b>
+          <button id="hideLogBtn" class="miniBtn">Hide</button>
+        </div>
+        <div id="log"></div>
+      </div>
+
       <div class="pileWrap" id="botDiscardPile">
         <h2>Bot Discard</h2>
         <p>Hover/click to inspect</p>
@@ -40,11 +50,11 @@
         <div id="botHandBacks" class="botHandBacks"></div>
       </div>
       <div class="fieldZone botFieldZone">
-        <h2>Warren Bot Field</h2>
+        <h2>Warren Bot Field <span id="botTurnLabel" class="turnBadge"></span></h2>
         <div id="botField" class="cardRow fieldRow"></div>
       </div>
       <div class="fieldZone playerFieldZone">
-        <h2>Your Field</h2>
+        <h2>Your Field <span id="playerTurnLabel" class="turnBadge"></span></h2>
         <div id="playerField" class="cardRow fieldRow"></div>
       </div>
       <div class="playerHandPanel">
@@ -55,6 +65,11 @@
     </section>
 
     <section class="sidePile playerSide">
+      <div class="sideControls">
+        <button id="chooseBtn" class="thinBtn">Choose Card / Ability</button>
+        <button id="endTurnBtn" class="thinBtn">End Turn</button>
+      </div>
+
       <div class="deckStats playerStats">
         <b>You</b>
         <span>Deck: <em id="playerDeck">0</em></span>
@@ -68,15 +83,6 @@
       </div>
     </section>
   </main>
-
-  <section class="bottomBar">
-    <button id="chooseBtn">Choose Card / Ability</button>
-    <button id="endTurnBtn">End Turn</button>
-    <div class="logPanel">
-      <b>Game Log</b>
-      <div id="log"></div>
-    </div>
-  </section>
 </div>
 
 <div id="hoverPreview" class="hoverPreview hidden">
