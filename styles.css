@@ -40,3 +40,9 @@ html,body{overflow:hidden}
 .gameOverText{text-align:center;font-size:18px;color:#fff;margin:8px 0 12px!important}
 
 @media(max-width:900px){html,body{overflow:auto}.table{height:auto;min-height:860px;grid-template-columns:1fr}.sidePile{overflow:visible}.sideControls{grid-template-columns:1fr 1fr}.sideLogPanel{max-height:300px}.modalCards,.rulesGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.handRow .card{width:112px;height:157px}.fieldRow .card{width:92px;height:129px}.hoverPreview{width:92vw;grid-template-columns:120px 1fr}.hoverPreview img{width:120px}}
+
+.rulesVideoWrap{width:100%;margin:10px 0 18px;background:#050508;border:2px solid var(--gold);border-radius:14px;padding:10px;box-shadow:0 0 20px rgba(0,0,0,.45)}
+.rulesVideo{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:10px;background:#000}
+
+.videoFallback{font-size:13px;line-height:1.35;color:#f5e8c8;margin:8px 4px 0;text-align:center}
+.videoFallback a{color:var(--gold);font-weight:800}

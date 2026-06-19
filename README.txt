@@ -1,4 +1,4 @@
-Chromatic Clash Browser Game - v9 UI Update
+Chromatic Clash Browser Game - v10 UI Update
 
 Open index.html in Chrome/ChromeOS or upload this folder to a static host.
 
