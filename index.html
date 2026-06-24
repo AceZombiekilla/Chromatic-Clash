@@ -4,114 +4,87 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
-  <title>Chromatic Clash Browser Game</title>
+  <title>Chromatic Clash Online</title>
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
 </head>
 <body>
-<div id="app">
-  <header class="topbar">
-    <div>
-      <h1>Chromatic Clash</h1>
-      <p id="status">Click New Game to start.</p>
-    </div>
-    <div class="topButtons">
-      <button id="newGameBtn">New Game</button>
-      <button id="muteBtn">Sound: On</button>
-      <button id="rulesBtn">Rules</button>
-    </div>
-  </header>
-
-  <main class="table">
-    <section class="sidePile botSide">
-      <div class="deckStats botStats">
-        <b>Warren Bot</b>
-        <span>Deck: <em id="botDeck">0</em></span>
-        <span>Hand: <em id="botHandCount">0</em></span>
-        <span>Discard: <em id="botDiscardCount">0</em></span>
-      </div>
-
-      <button id="logToggleBtn" class="thinBtn logToggle">Show Game Log</button>
-      <div id="sideLogPanel" class="sideLogPanel hidden">
-        <div class="sideLogHeader">
-          <b>Game Log</b>
-          <button id="hideLogBtn" class="miniBtn">Hide</button>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/logo.png" alt="Chromatic Clash" />
+        <div>
+          <h1>Chromatic Clash</h1>
+          <p id="status">Choose Solo, Host Online, or Join Online.</p>
         </div>
-        <div id="log"></div>
       </div>
+      <div class="topButtons">
+        <button id="soloBtn">Solo vs Bot</button>
+        <button id="hostBtn">Host Online</button>
+        <input id="joinCode" maxlength="8" placeholder="Code" />
+        <button id="joinBtn">Join</button>
+        <button id="rulesBtn">Rules</button>
+        <button id="muteBtn">Sound: On</button>
+      </div>
+    </header>
 
-      <div class="pileWrap" id="botDiscardPile">
-        <h2>Bot Discard</h2>
-        <p>Hover/click to inspect</p>
-        <div id="botDiscardTop" class="pileCard"></div>
-      </div>
+    <section id="onlinePanel" class="onlinePanel hidden">
+      <b>Online Game</b>
+      <span>Room Code: <strong id="roomCode">—</strong></span>
+      <span id="onlineState">Not connected</span>
+      <button id="copyCodeBtn" class="smallBtn">Copy Code</button>
     </section>
 
-    <section class="board">
-      <div class="botHandArea">
-        <div id="botHandBacks" class="botHandBacks"></div>
-      </div>
-      <div class="fieldZone botFieldZone">
-        <h2>Warren Bot Field <span id="botTurnLabel" class="turnBadge"></span></h2>
-        <div id="botField" class="cardRow fieldRow"></div>
-      </div>
-      <div class="fieldZone playerFieldZone">
-        <h2>Your Field <span id="playerTurnLabel" class="turnBadge"></span></h2>
-        <div id="playerField" class="cardRow fieldRow"></div>
-      </div>
-      <div class="playerHandPanel">
-        <h2>Your Hand</h2>
-        <p>Hover to read. Click/tap a card or drag it to Your Field to choose an ability.</p>
-        <div id="playerHand" class="cardRow handRow"></div>
-      </div>
-    </section>
+    <main class="table">
+      <aside class="sidePane leftPane">
+        <div class="stats opponentStats">
+          <b id="opponentName">Warren Bot</b>
+          <span>Deck: <em id="oppDeck">0</em></span>
+          <span>Hand: <em id="oppHand">0</em></span>
+          <span>Discard: <em id="oppDiscard">0</em></span>
+        </div>
+        <button id="logToggleBtn" class="thinBtn">Show Game Log</button>
+        <div id="logBox" class="logBox hidden">
+          <div class="logHeader"><b>Game Log</b><button id="hideLogBtn" class="miniBtn">Hide</button></div>
+          <div id="log"></div>
+        </div>
+        <div class="discardBox" id="oppDiscardBox"><h3>Opponent Discard</h3><div id="oppDiscardTop" class="pileCard"></div></div>
+      </aside>
 
-    <section class="sidePile playerSide">
-      <div class="sideControls">
-        <button id="chooseBtn" class="thinBtn">Choose Card / Ability</button>
-        <button id="endTurnBtn" class="thinBtn">End Turn</button>
-      </div>
+      <section class="board">
+        <div class="opponentHand" id="opponentHand"></div>
+        <section class="fieldZone opponentZone"><h2><span id="oppFieldName">Opponent Field</span> <span id="oppTurnBadge" class="turnBadge"></span></h2><div id="oppField" class="cardRow"></div></section>
+        <section class="fieldZone playerZone"><h2>Your Field <span id="playerTurnBadge" class="turnBadge"></span></h2><div id="playerField" class="cardRow"></div></section>
+        <section class="handPanel"><h2>Your Hand</h2><p>Click a card or drag it to your field. Reactions are played from your hand only.</p><div id="playerHand" class="cardRow handRow"></div></section>
+      </section>
 
-      <div class="deckStats playerStats">
-        <b>You</b>
-        <span>Deck: <em id="playerDeck">0</em></span>
-        <span>Hand: <em id="playerHandCount">0</em></span>
-        <span>Discard: <em id="playerDiscardCount">0</em></span>
-      </div>
-      <div class="pileWrap" id="playerDiscardPile">
-        <h2>Your Discard</h2>
-        <p>Hover/click to inspect</p>
-        <div id="playerDiscardTop" class="pileCard"></div>
-      </div>
-    </section>
-  </main>
-</div>
-
-<div id="hoverPreview" class="hoverPreview hidden">
-  <img id="hoverPreviewImg" alt="Large card preview" />
-  <div>
-    <h3 id="hoverPreviewTitle"></h3>
-    <p id="hoverPreviewText"></p>
+      <aside class="sidePane rightPane">
+        <div class="actions">
+          <button id="chooseBtn" class="thinBtn">Choose Card / Ability</button>
+          <button id="endTurnBtn" class="thinBtn">End Turn</button>
+          <button id="rematchBtn" class="thinBtn hidden">Request Rematch</button>
+        </div>
+        <div class="stats playerStats">
+          <b>You</b>
+          <span>Deck: <em id="playerDeck">0</em></span>
+          <span>Hand: <em id="playerHandCount">0</em></span>
+          <span>Discard: <em id="playerDiscard">0</em></span>
+        </div>
+        <div class="discardBox" id="playerDiscardBox"><h3>Your Discard</h3><div id="playerDiscardTop" class="pileCard"></div></div>
+      </aside>
+    </main>
   </div>
-</div>
 
-<div id="discardPreview" class="discardPreview hidden">
-  <h3 id="discardPreviewTitle"></h3>
-  <div id="discardPreviewCards"></div>
-</div>
-
-<div id="modal" class="modal hidden">
-  <div class="modalBox">
-    <button id="closeModal" class="close">×</button>
-    <button id="hideModal" class="minimize">Hide</button>
-    <h2 id="modalTitle"></h2>
-    <p id="modalText"></p>
-    <div id="modalCardArea" class="modalCards"></div>
-    <div id="modalActions" class="modalActions"></div>
+  <div id="modal" class="modal hidden">
+    <div class="modalBox">
+      <button id="closeModal" class="close">×</button>
+      <h2 id="modalTitle"></h2>
+      <p id="modalText"></p>
+      <div id="modalContent"></div>
+      <div id="modalActions" class="modalActions"></div>
+    </div>
   </div>
-</div>
 
-<button id="showModalBtn" class="showModalBtn hidden">Show Popup</button>
-
-<script src="game.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>

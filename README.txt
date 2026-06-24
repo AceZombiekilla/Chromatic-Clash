@@ -1,15 +1,15 @@
-Chromatic Clash Browser Game - v10 UI Update
+Chromatic Clash Online v14 - Reaction Chain + Auto Turn Update
 
-Open index.html in Chrome/ChromeOS or upload this folder to a static host.
+Open index.html in Chrome/ChromeOS, or upload the folder to GitHub Pages/Google Sites.
 
-Updated in this version:
-- Game log is hidden by default.
-- Show Game Log opens a left-side log box between Warren Bot's deck info and discard pile.
-- Choose Card / Ability and End Turn moved to the right side and made thinner.
-- Field labels now show the active turn next to the correct field.
-- Rules popup opens automatically when the game first starts.
-- Card display and modal card selection are larger and better spaced.
-- Win popup added with game logo and New Game button.
-- Loss popup added with game logo and New Game button.
+New in v14:
+- Players can now react to reactions.
+- Blue and Black reactions create a reaction chain that continues until reactions stop.
+- Players can keep reacting back and forth with Blue/Black from hand.
+- Yellow, Pink, Red, and Green still do not react.
+- Blue's extra discarded card is only a cost; its ability does not happen.
+- Turns automatically switch when the current player has no cards/actions left to play.
+- Online mode still supports Host Game, Join Game by short code, and Instant Rematch.
 
-Keep the index.html, game.js, styles.css, and assets folder together.
+Online mode uses PeerJS/WebRTC and requires internet for two-player games.
+The YouTube rules video requires internet and works best after hosting online.

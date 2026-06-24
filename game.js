@@ -1,136 +1,347 @@
-(()=>{
-'use strict';
-const PLAYER=0, BOT=1;
 const COLORS=['Red','Blue','Green','Yellow','Pink','Black'];
-const IMG={Red:'assets/red.png',Blue:'assets/blue.png',Pink:'assets/pink.png',Green:'assets/green.png',Yellow:'assets/yellow.png',Black:'assets/black.png'};
-const BACK={0:'assets/back_white.png',1:'assets/back_black.png'};
-const BG={Red:'redBg',Blue:'blueBg',Pink:'pinkBg',Green:'greenBg',Yellow:'yellowBg',Black:'blackBg'};
-let game=null, audioCtx=null, muted=false, hoverTimer=null, pendingModal=false;
-function el(id){return document.getElementById(id)}
-function P(i){return game.players[i]} function O(i){return i===PLAYER?BOT:PLAYER}
-function unlockSound(){ if(!audioCtx){ const C=window.AudioContext||window.webkitAudioContext; if(C) audioCtx=new C(); }}
-function tone(freq,dur=.18,type='sine',gain=.08,delay=0){ if(muted) return; unlockSound(); if(!audioCtx) return; const now=audioCtx.currentTime+delay; const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type=type; o.frequency.setValueAtTime(freq,now); g.gain.setValueAtTime(.001,now); g.gain.exponentialRampToValueAtTime(gain,now+.015); g.gain.exponentialRampToValueAtTime(.001,now+dur); o.connect(g); g.connect(audioCtx.destination); o.start(now); o.stop(now+dur+.02); }
-const AUDIO={newGame:'assets/audio/new_game.mp3',deal:'assets/audio/draw.mp3',draw:'assets/audio/draw.mp3',botReact:'assets/audio/bot_react.mp3',youWin:'assets/audio/you_win.mp3',botWin:'assets/audio/bot_win.mp3',trap:'assets/audio/yellow_trap.mp3',bg:'assets/audio/background.mp3'};
-let bgMusic=null;
-function startMusic(){ if(muted) return; try{ if(!bgMusic){ bgMusic=new Audio(AUDIO.bg); bgMusic.loop=true; bgMusic.volume=.12; } bgMusic.play().catch(()=>{}); }catch(e){} }
-function playClip(key,vol=.6){ if(muted) return; startMusic(); try{ let src=AUDIO[key]; if(!src){ toneFallback(key); return; } let a=new Audio(src); a.volume=vol; a.currentTime=0; a.play().catch(()=>toneFallback(key)); }catch(e){ toneFallback(key); } }
-function toneFallback(type){ if(muted) return; unlockSound(); if(!audioCtx) return; const base={newGame:260,deal:520,draw:520,botReact:170,youWin:880,botWin:120,trap:740,click:260,play:392,discard:180,bounce:650,turn:300,return:620}[type]||440; tone(base,.18,'sine',.06); }
-function sfx(type){ if(muted) return; if(type==='shuffle'||type==='newGame'){playClip('newGame',.72);return} if(type==='deal'){playClip('deal',.42);return} if(type==='draw'){playClip('draw',.55);return} if(type==='counter'||type==='botReact'){playClip('botReact',.72);return} if(type==='trap'){playClip('trap',.7);return} if(type==='winUser'||type==='youWin'){playClip('youWin',.8);return} if(type==='winBot'||type==='botWin'){playClip('botWin',.8);return} toneFallback(type); }
-function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+const IMG={Red:'assets/red.png',Blue:'assets/blue.png',Green:'assets/green.png',Yellow:'assets/yellow.png',Pink:'assets/pink.png',Black:'assets/black.png'};
+const BACK='assets/back.png';
+const PLAYER=0, OPP=1;
+let game=null, localSeat=PLAYER, mode='solo', peer=null, conn=null, isHost=false, muted=false, bgAudio=null;
+let rematchRequested={0:false,1:false};
+const $=id=>document.getElementById(id);
+function log(t){const d=document.createElement('div');d.className='logItem';d.textContent=t;$('log').appendChild(d)}
+function status(t){$('status').textContent=t}
+function snd(name){if(muted)return; try{let a=new Audio(name);a.volume=.55;a.play().catch(()=>{})}catch{}}
+function bg(){startBg()}
+function startBg(){if(muted)return; try{if(!bgAudio){bgAudio=new Audio('sounds/bg.mp3');bgAudio.loop=true;bgAudio.volume=.18}bgAudio.play().catch(()=>{})}catch{}}
+function setMuted(v){muted=v;if(bgAudio){if(muted)bgAudio.pause();else startBg()}$('muteBtn').textContent=muted?'Sound: Off':'Sound: On'}
+function uid(){return Math.random().toString(36).slice(2,8).toUpperCase()}
+function copy(o){return JSON.parse(JSON.stringify(o))}
+function p(i){return game.players[i]}
+function opp(i){return i===0?1:0}
+function img(c){return IMG[c.color||c]}
+function makeDeck(owner){let deck=[];let n=0;COLORS.forEach(color=>{for(let i=0;i<10;i++)deck.push({id:owner+'-'+color+'-'+(n++),color,owner,trapped:[]})});for(let i=deck.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]]}return deck}
+function newState(){return {players:[{name:'You',deck:makeDeck(0),hand:[],field:[],discard:[],removed:[]},{name:mode==='solo'?'Warren Bot':'Opponent',deck:makeDeck(1),hand:[],field:[],discard:[],removed:[]}],current:0,firstTurn:true,actionUsed:false,pending:null,over:false,winner:null,winReason:''}}
+function draw(player,n=1,announce=true){for(let i=0;i<n;i++){let c=p(player).deck.pop(); if(c)p(player).hand.push(c)} if(announce){log(`${p(player).name} draws ${n}.`);snd('sounds/draw.mp3')}}
+function startGame(){game=newState();draw(0,3,false);draw(1,3,false);rematchRequested={0:false,1:false};log(mode==='solo'?'New solo game started.':'Online game started.');snd('sounds/shuffle.mp3');status(localSeat===0?'Your turn.':'Waiting for opponent.');render();sync();if(mode==='solo'&&localSeat===0)autoEndCheck()}
+function hostOnline(){startBg();if(!window.Peer){alert('PeerJS did not load. Check internet connection.');return}cleanupPeer();mode='online';isHost=true;localSeat=0;const code='CC'+Math.random().toString(36).slice(2,6).toUpperCase();$('onlinePanel').classList.remove('hidden');$('roomCode').textContent=code;$('onlineState').textContent='Waiting for player...';peer=new Peer(code);peer.on('open',id=>{status('Give this code to the other player: '+id)});peer.on('connection',c=>{conn=c;setupConn();$('onlineState').textContent='Player connected. Starting game.';startGame()});peer.on('error',e=>{status('Online error: '+e.type);log('Online error: '+e.message)})}
+function joinOnline(){startBg();if(!window.Peer){alert('PeerJS did not load. Check internet connection.');return}let code=$('joinCode').value.trim().toUpperCase();if(!code)return alert('Enter the host code.');cleanupPeer();mode='online';isHost=false;localSeat=1;$('onlinePanel').classList.remove('hidden');$('roomCode').textContent=code;$('onlineState').textContent='Connecting...';peer=new Peer();peer.on('open',()=>{conn=peer.connect(code,{reliable:true});setupConn()});peer.on('error',e=>{status('Online error: '+e.type);log('Online error: '+e.message)})}
+function setupConn(){conn.on('open',()=>{$('onlineState').textContent='Connected';status(isHost?'Opponent joined.':'Connected. Waiting for host.');if(conn.send)conn.send({type:'hello'})});conn.on('data',msg=>{if(msg.type==='state'){game=msg.game;render()}else if(msg.type==='move'&&isHost){handleMove(msg.move,1)}else if(msg.type==='rematch'&&isHost){rematchRequested[msg.player]=true;log('Opponent requested a rematch.');if(rematchRequested[0]&&rematchRequested[1])startGame();else sync()}else if(msg.type==='rematchHost'){rematchRequested=msg.rematchRequested||rematchRequested;render()}else if(msg.type==='hello'&&isHost&&game)sync()});conn.on('close',()=>{$('onlineState').textContent='Disconnected';status('Online opponent disconnected.')})}
+function cleanupPeer(){try{if(conn)conn.close();if(peer)peer.destroy()}catch{} conn=null;peer=null;isHost=false}
+function sync(){if(mode==='online'&&isHost&&conn&&conn.open){conn.send({type:'state',game});conn.send({type:'rematchHost',rematchRequested})}}
+function sendMove(move){if(mode==='online'&&!isHost){conn?.send({type:'move',move});return}handleMove(move,localSeat)}
+function handleMove(move,seat){if(!game||game.over)return;if(move.action==='play')playCard(seat,move.index,move.kind);if(move.action==='passReaction')passReaction(seat);if(move.action==='blueReaction')blueReaction(seat,move.blueIndex,move.extraIndex);if(move.action==='blackReaction')blackReaction(seat,move.blackIndex);if(move.action==='target')chooseTarget(seat,move.targetType,move.index);if(move.action==='endTurn')endTurn(seat);render();sync();scheduleAutoProgress()}
+function canAct(seat){return game&&game.current===seat&&!game.actionUsed&&!game.pending&&!game.over}
+function cardCanDiscard(c){return ['Red','Green','Black'].includes(c.color)}
+function hasReaction(seat){let h=p(seat).hand;return h.some(c=>c.color==='Black')||(h.some(c=>c.color==='Blue')&&h.length>=2)}
+function stackTop(){if(!game.pending||game.pending.type!=='stack')return null;let st=game.pending.stack;return st[st.length-1]||null}
+function pendingCard(){let top=stackTop();if(!top||top.kind!=='field')return null;let idx=fieldCardById(top.player,top.cardId);return idx>=0?p(top.player).field[idx]:null}
+function setReactionStack(action){game.pending={type:'stack',stack:[action],reactFor:opp(action.player)};status(`${p(opp(action.player)).name} may react.`)}
+function playCard(seat,index,kind){
+  if(!canAct(seat))return;
+  let hand=p(seat).hand;
+  if(index<0||index>=hand.length)return;
+  let card=hand[index];
+  if(kind==='discard'){
+    if(!cardCanDiscard(card))return;
+    hand.splice(index,1);
+    p(seat).discard.push(card);
+    log(`${p(seat).name} uses ${card.color} Discard Action.`);
+    resolveDiscard(seat,card);
+    // If the discard action did not create a target choice, the action is done.
+    if(!game.pending)finishAction(seat);
+    return;
+  }
+  hand.splice(index,1);
+  p(seat).field.push(card);
+  log(`${p(seat).name} adds ${card.color} to field.`);
+  setReactionStack({kind:'field',player:seat,cardId:card.id,color:card.color});
+  // In solo, the bot immediately gets a chance to answer your play. If it does not react, it passes.
+  if(mode==='solo'&&seat===PLAYER)setTimeout(()=>{botReactOrPass();render();scheduleAutoProgress()},450);
+}
+function fieldCardById(player,id){return p(player).field.findIndex(c=>c.id===id)}
+function passReaction(seat){if(!game.pending||game.pending.type!=='stack'||game.pending.reactFor!==seat)return;let st=game.pending.stack;let top=st.pop();if(!top){game.pending=null;return}resolveStackAction(top,st);if(game.pending&&game.pending.type==='stack'){if(st.length){let next=st[st.length-1];game.pending.reactFor=opp(next.player);log(`${p(game.pending.reactFor).name} may react to ${next.kind==='field'?next.color+' card':'the reaction'} again.`)}else{let acting=game.current;game.pending=null;finishAction(acting)}}}
+function blueReaction(seat,blueIndex,extraIndex){if(!game.pending||game.pending.type!=='stack'||game.pending.reactFor!==seat)return;let hand=p(seat).hand;if(!hand[blueIndex]||hand[blueIndex].color!=='Blue'||hand.length<2)return;let blue=hand.splice(blueIndex,1)[0];if(extraIndex>blueIndex)extraIndex--;if(extraIndex<0||extraIndex>=hand.length){p(seat).hand.push(blue);return}let extra=hand.splice(extraIndex,1)[0];p(seat).discard.push(blue,extra);game.pending.stack.push({kind:'blueReaction',player:seat,color:'Blue'});game.pending.reactFor=opp(seat);log(`${p(seat).name} plays Blue Reaction from hand, discarding Blue and ${extra.color}. ${p(opp(seat)).name} may react to the reaction.`);snd('sounds/react.mp3')}
+function blackReaction(seat,blackIndex){if(!game.pending||game.pending.type!=='stack'||game.pending.reactFor!==seat)return;let hand=p(seat).hand;if(!hand[blackIndex]||hand[blackIndex].color!=='Black')return;let black=hand.splice(blackIndex,1)[0];p(seat).discard.push(black);game.pending.stack.push({kind:'blackReaction',player:seat,color:'Black'});game.pending.reactFor=opp(seat);log(`${p(seat).name} plays Black Reaction from hand. ${p(opp(seat)).name} may react to the reaction.`);snd('sounds/react.mp3')}
+function resolveStackAction(action,st){
+  if(action.kind==='field'){
+    let idx=fieldCardById(action.player,action.cardId);let card=idx>=0?p(action.player).field[idx]:null;
+    if(card){log(`${action.color} resolves.`);resolveField(action.player,card)}
+    return;
+  }
+  let target=st.pop();
+  if(!target){log(`${action.color} Reaction resolves, but there is no card left to counter.`);return;}
+  if(target.kind==='field'){
+    let idx=fieldCardById(target.player,target.cardId);
+    if(idx>=0){let card=p(target.player).field.splice(idx,1)[0];
+      if(action.kind==='blueReaction'){p(target.player).discard.push(card);log(`${p(action.player).name}'s Blue Reaction counters ${p(target.player).name}'s ${card.color}; it goes to discard.`)}
+      else{p(target.player).hand.push(card);log(`${p(action.player).name}'s Black Reaction counters ${p(target.player).name}'s ${card.color}; it returns to hand.`)}
+    }
+  }else{
+    log(`${p(action.player).name}'s ${action.color} Reaction counters ${p(target.player).name}'s ${target.color} Reaction. The countered reaction ability does not happen.`)
+  }
+}
+function resolveField(seat,card){
+  let enemy=opp(seat);
+  if(card.color==='Blue'){
+    draw(seat,1);
+    return;
+  }
+  if(card.color==='Green'){
+    if(p(seat).discard.length){
+      game.pending={type:'target',player:seat,targetType:'greenReturn'};
+      status(`${p(seat).name} chooses a discard card to return to hand.`);
+    }else{
+      log(`${p(seat).name} has no discard cards for Green to return.`);
+    }
+    return;
+  }
+  if(card.color==='Red'){
+    if(p(enemy).field.length){game.pending={type:'target',player:seat,targetType:'redRemove'};status(`${p(seat).name} chooses a card to remove.`)}
+    return;
+  }
+  if(card.color==='Pink'){
+    if(p(enemy).hand.length){
+      game.pending={type:'target',player:seat,targetType:'pinkHandDiscard'};
+      status(`${p(seat).name} looks at ${p(enemy).name}'s hand and chooses a card to discard.`);
+    }else if(p(enemy).discard.length){
+      game.pending={type:'target',player:seat,targetType:'pinkRemoveDiscard'};
+      status(`${p(seat).name} chooses cards from ${p(enemy).name}'s discard pile to remove from the game.`);
+    }else{
+      log(`${p(seat).name} uses Pink, but there is no hand card or discard card to choose.`);
+    }
+    return;
+  }
+  if(card.color==='Yellow'){
+    if(p(enemy).field.length){game.pending={type:'target',player:seat,targetType:'yellowTrap',cardId:card.id};snd('sounds/trap.mp3');}
+    return;
+  }
+  if(card.color==='Black'){
+    if(p(enemy).field.length){game.pending={type:'target',player:seat,targetType:'blackSwap',cardId:card.id};status(`${p(seat).name} chooses a field card to swap with Black.`)}
+    return;
+  }
+}
+function resolveDiscard(seat,card){
+  if(card.color==='Red')draw(seat,2);
+  if(card.color==='Green'){
+    let look=p(seat).deck.splice(-5);
+    if(look.length){
+      game.pending={type:'target',player:seat,targetType:'greenLook',cards:look};
+      status(`${p(seat).name} looks at the top 5 cards and chooses 1 for hand.`);
+    }else{
+      log(`${p(seat).name} has no cards to look at.`);
+    }
+  }
+  if(card.color==='Black'){
+    if(p(opp(seat)).field.length){game.pending={type:'target',player:seat,targetType:'blackBounceEnemy'};}
+  }
+}
+function chooseTarget(seat,type,index){
+  if(!game.pending||game.pending.player!==seat||game.pending.targetType!==type)return;
+  let enemy=opp(seat);
+  if(type==='greenReturn'&&p(seat).discard[index]){
+    let c=p(seat).discard.splice(index,1)[0];
+    p(seat).hand.push(c);
+    log(`${p(seat).name} returns ${c.color} from discard to hand.`);
+  }
+  if(type==='greenLook'&&game.pending.cards&&game.pending.cards[index]){
+    let picked=game.pending.cards.splice(index,1)[0];
+    p(seat).hand.push(picked);
+    // Put the rest on the bottom of the deck. The chosen player sees them, then they go back underneath.
+    p(seat).deck.unshift(...game.pending.cards);
+    log(`${p(seat).name} looks at 5 and takes ${picked.color}.`);
+  }
+  if(type==='redRemove'&&p(enemy).field[index]){
+    let c=p(enemy).field.splice(index,1)[0];p(enemy).discard.push(c);log(`${p(seat).name} removes ${c.color} from opponent field.`)
+  }
+  if(type==='pinkHandDiscard'&&p(enemy).hand[index]){
+    let c=p(enemy).hand.splice(index,1)[0];
+    p(enemy).discard.push(c);
+    log(`${p(seat).name} uses Pink. ${p(enemy).name} discards ${c.color} from hand.`);
+  }
+  if(type==='pinkRemoveDiscard'&&p(enemy).discard[index]){
+    let removed=[];
+    let c=p(enemy).discard.splice(index,1)[0];
+    removed.push(c);
+    // Remove up to 2 total. If there is another discard card, remove the top remaining card too.
+    if(p(enemy).discard.length)removed.push(p(enemy).discard.pop());
+    p(enemy).removed.push(...removed);
+    log(`${p(seat).name} removes ${removed.map(x=>x.color).join(' and ')} from ${p(enemy).name}'s discard pile.`);
+  }
+  if(type==='yellowTrap'&&p(enemy).field[index]){
+    let yidx=p(seat).field.findIndex(c=>c.id===game.pending.cardId);
+    let c=p(enemy).field.splice(index,1)[0];
+    if(yidx>=0){p(seat).field[yidx].trapped=p(seat).field[yidx].trapped||[];p(seat).field[yidx].trapped.push(c);log(`${p(seat).name} traps ${c.color} under Yellow.`)}
+  }
+  if(type==='blackBounceEnemy'&&p(enemy).field[index]){
+    let c=p(enemy).field.splice(index,1)[0];p(enemy).hand.push(c);log(`${p(seat).name} returns ${c.color} to owner hand.`)
+  }
+  if(type==='blackSwap'&&p(enemy).field[index]){
+    let myIdx=p(seat).field.findIndex(c=>c.id===game.pending.cardId);
+    if(myIdx>=0){
+      [p(seat).field[myIdx],p(enemy).field[index]]=[p(enemy).field[index],p(seat).field[myIdx]];
+      log(`${p(seat).name} swaps Black with ${p(enemy).name}'s field card.`);
+    }
+  }
+  game.pending=null;
+  finishAction(seat);
+}
+function finishAction(seat){
+  if(!game||game.over)return;
+  game.actionUsed=true;
+  checkWin(seat);
+  if(game.over)return;
+  // After a player's one action is fully resolved, the turn changes automatically.
+  setTimeout(()=>{
+    if(game&&!game.over&&!game.pending&&game.current===seat&&game.actionUsed){
+      endTurn(seat);
+      render();
+      sync();
+      scheduleAutoProgress();
+    }
+  },700);
+}
+function endTurn(seat){
+  if(!game||seat!==game.current||game.pending)return;
+  if(game.over)return;
+  checkWin(seat);if(game.over)return;
+  game.current=opp(game.current);
+  game.actionUsed=false;
+  game.firstTurn=false;
+  draw(game.current,1);
+  log(`${p(game.current).name}'s turn.`);
+  status(game.current===localSeat?'Your turn.':(mode==='solo'?'Warren Bot turn.':'Opponent turn.'));
+  if(mode==='solo'&&game.current===OPP)setTimeout(botTurn,700);
+}
+function hasPlayable(seat){return game&&!game.pending&&!game.over&&game.current===seat&&!game.actionUsed&&p(seat).hand.length>0}
+function autoEndCheck(){
+  if(game&&!game.pending&&!game.over&&game.current===localSeat&&!game.actionUsed&&!hasPlayable(localSeat)){
+    log('No playable action. Turn ends automatically.');
+    setTimeout(()=>sendMove({action:'endTurn'}),500);
+  }
+}
+function botReactOrPass(){
+  if(!game||!game.pending||game.pending.type!=='stack'||game.pending.reactFor!==OPP)return;
+  let h=p(OPP).hand;
+  let bi=h.findIndex(c=>c.color==='Blue');
+  if(bi>=0&&h.length>=2&&Math.random()<.35){let ei=h.findIndex((c,i)=>i!==bi);blueReaction(OPP,bi,ei);return}
+  let ki=h.findIndex(c=>c.color==='Black');
+  if(ki>=0&&Math.random()<.2){blackReaction(OPP,ki);return}
+  passReaction(OPP);
+}
+function botTurn(){
+  if(!game||game.over||game.current!==OPP)return;
+  if(game.pending)return;
+  if(game.actionUsed){endTurn(OPP);render();sync();scheduleAutoProgress();return}
+  let h=p(OPP).hand;
+  if(!h.length){endTurn(OPP);render();sync();scheduleAutoProgress();return}
+  let idx=h.findIndex(c=>c);
+  let c=h[idx];
+  let kind=cardCanDiscard(c)&&Math.random()<.25?'discard':'field';
+  playCard(OPP,idx,kind);
+  render();sync();scheduleAutoProgress();
+  if(game.pending&&game.pending.type==='target'&&game.pending.player===OPP){
+    setTimeout(()=>{if(game&&game.pending&&game.pending.type==='target'&&game.pending.player===OPP){chooseTarget(OPP,game.pending.targetType,0);render();sync();scheduleAutoProgress()}},450);
+  }
+}
+let autoProgressTimer=null;
+function scheduleAutoProgress(){
+  if(autoProgressTimer)clearTimeout(autoProgressTimer);
+  if(!game||game.over)return;
 
-function findReactionCardInHand(player, color){
-  return P(player).hand.findIndex(function(card){
-    return card && card.color === color;
-  });
-}
-function findAnyOtherHandCard(player, excludeIndex){
-  for(let i = 0; i < P(player).hand.length; i++){
-    if(i !== excludeIndex) return i;
+  if(game.pending&&game.pending.type==='stack'){
+    let rf=game.pending.reactFor;
+    if(mode==='solo'&&rf===OPP){
+      autoProgressTimer=setTimeout(()=>{if(game&&game.pending&&game.pending.type==='stack'&&game.pending.reactFor===OPP&&!game.over){botReactOrPass();render();sync();scheduleAutoProgress()}},550);
+      return;
+    }
+    if(!hasReaction(rf)){
+      if(mode==='online'&&isHost&&rf!==localSeat){
+        autoProgressTimer=setTimeout(()=>{if(game&&game.pending&&game.pending.type==='stack'&&game.pending.reactFor===rf&&!hasReaction(rf)){passReaction(rf);render();sync();scheduleAutoProgress()}},550);
+        return;
+      }
+      if(rf===localSeat){
+        status('No Blue or Black reaction in hand. Passing automatically.');
+        autoProgressTimer=setTimeout(()=>{if(game&&game.pending&&game.pending.type==='stack'&&game.pending.reactFor===localSeat&&!hasReaction(localSeat))sendMove({action:'passReaction'})},550);
+        return;
+      }
+    }
   }
-  return -1;
-}
 
-function makeDeck(owner){let d=[],n=0;for(const color of COLORS){for(let i=0;i<10;i++)d.push({id:`${owner}-${color}-${n++}`,color,owner,controller:owner,trapped:[]})}return shuffle(d)}
-function newGame(){unlockSound();sfx('shuffle');closeModal();game={players:[{name:'You',deck:makeDeck(PLAYER),hand:[],field:[],discard:[],removed:[],redUsed:false},{name:'Warren Bot',deck:makeDeck(BOT),hand:[],field:[],discard:[],removed:[],redUsed:false}],current:PLAYER,firstTurn:true,actionUsed:false,resolving:false,over:false};el('log').innerHTML='';setTimeout(()=>sfx('deal'),250);draw(PLAYER,3,false);draw(BOT,3,false);log('New game started. You go first and do not draw on the first turn.');status('Your turn. Hover to read. Click/tap or drag a card to your field to choose an ability.');render();autoEndCheck()}
-function draw(player,n=1,announce=true){for(let i=0;i<n;i++){if(P(player).deck.length===0&&P(player).discard.length){P(player).deck=shuffle(P(player).discard);P(player).discard=[];log(`${P(player).name} shuffles discard into deck.`);sfx('shuffle')}if(P(player).deck.length)P(player).hand.push(P(player).deck.pop())}if(announce){log(`${P(player).name} draws ${n} card${n===1?'':'s'}.`);sfx('draw')}renderSoon()}
-function renderSoon(){setTimeout(()=>{if(game)render()},0)}
-function log(t){let d=document.createElement('div');d.className='logItem';d.textContent=t;el('log').appendChild(d)} function status(t){el('status').textContent=t}
-function updateTurnLabels(){let pt=el('playerTurnLabel'), bt=el('botTurnLabel'); if(!pt||!bt||!game)return; pt.textContent=game.over?'Game Over':(game.current===PLAYER?'Your Turn':'Waiting'); bt.textContent=game.over?'Game Over':(game.current===BOT?'Bot Turn':'Waiting'); pt.classList.toggle('active',game.current===PLAYER||game.over); bt.classList.toggle('active',game.current===BOT||game.over)}
-function showLog(){el('sideLogPanel').classList.remove('hidden');el('logToggleBtn').classList.add('hidden')}
-function hideLog(){el('sideLogPanel').classList.add('hidden');el('logToggleBtn').classList.remove('hidden')}
-function render(){if(!game)return;el('playerDeck').textContent=P(PLAYER).deck.length;el('playerHandCount').textContent=P(PLAYER).hand.length;el('playerDiscardCount').textContent=P(PLAYER).discard.length;el('botDeck').textContent=P(BOT).deck.length;el('botHandCount').textContent=P(BOT).hand.length;el('botDiscardCount').textContent=P(BOT).discard.length;renderCards('playerField',P(PLAYER).field,(c)=>showCard(c),false);renderCards('botField',P(BOT).field,(c)=>showCard(c),false);renderCards('playerHand',P(PLAYER).hand,(c,i)=>{if(canUseTurnCard(PLAYER,i))showHandOptions(c,i);else showCard(c)},true);renderBotHand();renderDiscardTop(PLAYER);renderDiscardTop(BOT);updateTurnLabels();let can=game.current===PLAYER&&!game.actionUsed&&!game.resolving&&!game.over&&hasPlayableAction(PLAYER);el('chooseBtn').disabled=!can;el('endTurnBtn').disabled=game.current!==PLAYER||game.resolving||game.over;setupDropZone()}
-function renderCards(id,cards,click,hand=false){let row=el(id);row.innerHTML='';cards.forEach((c,i)=>row.appendChild(cardEl(c,()=>click(c,i),false,hand?i:null)))}
-function renderBotHand(){let row=el('botHandBacks');row.innerHTML='';for(let i=0;i<P(BOT).hand.length;i++)row.appendChild(backEl(BOT,i))}
-function renderDiscardTop(player){let box=el(player===PLAYER?'playerDiscardTop':'botDiscardTop');box.innerHTML='';let top=P(player).discard[P(player).discard.length-1];box.appendChild(top?cardEl(top,()=>showDiscardModal(player),true):emptyCard('Empty'))}
-function cardEl(card,click,small=false,handIndex=null){let d=document.createElement('div');d.className='card '+(small?'small':'');d.onclick=(e)=>{sfx('click');click&&click(e)};d.onmouseenter=()=>showHover(card);d.onmousemove=()=>showHover(card);d.onmouseleave=hideHover;d.ontouchstart=()=>showHover(card); if(handIndex!==null&&canUseTurnCard(PLAYER,handIndex)){d.draggable=true;d.addEventListener('dragstart',ev=>{d.classList.add('dragging');ev.dataTransfer.setData('text/plain',String(handIndex));ev.dataTransfer.effectAllowed='move'});d.addEventListener('dragend',()=>d.classList.remove('dragging'))}let im=document.createElement('img');im.src=IMG[card.color];im.onerror=()=>{im.remove();let f=document.createElement('div');f.className='fallback '+BG[card.color];f.textContent=card.color;d.appendChild(f)};d.appendChild(im);let l=document.createElement('div');l.className='label';l.textContent=card.color;d.appendChild(l);if(card.trapped&&card.trapped.length){let t=document.createElement('div');t.className='trap';t.title=trappedSummary(card);t.textContent='+'+card.trapped.length;d.appendChild(t)}return d}
-function setupDropZone(){let zone=el('playerField').parentElement; if(!zone || zone.dataset.dropReady==='1')return;zone.dataset.dropReady='1';zone.addEventListener('dragover',ev=>{if(game&&game.current===PLAYER&&!game.actionUsed&&!game.resolving){ev.preventDefault();zone.classList.add('dropReady')}});zone.addEventListener('dragleave',()=>zone.classList.remove('dropReady'));zone.addEventListener('drop',ev=>{ev.preventDefault();zone.classList.remove('dropReady');let idx=parseInt(ev.dataTransfer.getData('text/plain'),10);if(Number.isFinite(idx)&&canUseTurnCard(PLAYER,idx))showHandOptions(P(PLAYER).hand[idx],idx)})}
-function backEl(player,idx){let d=document.createElement('div');d.className='card small back';let im=document.createElement('img');im.src=BACK[player];d.appendChild(im);return d}
-function emptyCard(t){let d=document.createElement('div');d.className='card small';let f=document.createElement('div');f.className='fallback blackBg';f.textContent=t;d.appendChild(f);return d}
-function rulesText(color){return {Red:"Field of Play: Choose 1 card on your opponent's field of play. Put it into its owner's discard pile.\n\nDiscard Action: Discard this card from your hand. Draw 2 cards. You may use this on your opponent's turn if you have not used Red Discard Action that turn.",Blue:"Field of Play: Draw 1 card.\n\nReaction: Discard this card and any other card in your hand to counter the previously played card. Put the countered card directly into the discard pile. Its ability does not happen.",Pink:"Field of Play: Choose 1:\n• Opponent reveals their hand. Choose 1 revealed card and put it into its owner's discard pile.\n• Remove up to 2 cards from your opponent's discard pile from the game.",Green:"Field of Play: Return 1 card from your discard pile to your hand.\n\nDiscard Action: Discard this card. Look at the top 5 cards of your deck. Choose 1 to put into your hand and place the rest on the bottom.",Yellow:"Field of Play: Choose 1:\n• Retrigger the Field of Play effect of 1 non-Black card on your field.\n• Trap 1 opponent field card under this card until this card leaves the field.\n\nCards trapped under Yellow are shown with a + badge. Hover or click Yellow to see trapped cards.",Black:"Field of Play: Choose 1 card on your opponent's field of play. Swap control of this card with that card.\n\nDiscard Action / Reaction: Discard this card from your hand to counter the previously played card and return it to the player's hand, OR return 1 card from the field of play to its owner's hand. Target must be declared beforehand."}[color]}
-function fieldAbilityText(color){return {Red:"Red Field of Play: Choose 1 opponent field card and put it into its owner's discard pile.",Blue:"Blue Field of Play: Draw 1 card.",Pink:"Pink Field of Play: Opponent reveals hand and discards 1, OR remove up to 2 cards from opponent discard.",Green:"Green Field of Play: Return 1 card from your discard pile to your hand.",Yellow:"Yellow Field of Play: Retrigger a non-Black field effect, OR trap an opponent field card.",Black:"Black Field of Play: Swap control with 1 opponent field card."}[color]||''}
-function contextText(ctx){return `${P(ctx.player).name} is using ${ctx.card.color}.\n\n${ctx.type==='discard'?ctx.card.color+' Discard Action.':fieldAbilityText(ctx.card.color)}`}
-function trappedSummary(card){return card.trapped&&card.trapped.length?'Trapped under this Yellow: '+card.trapped.map(c=>c.color).join(', '):'No trapped cards'}
-function showHover(card){clearTimeout(hoverTimer);el('hoverPreviewImg').src=IMG[card.color];el('hoverPreviewTitle').textContent=card.color+(card.trapped&&card.trapped.length?` — ${card.trapped.length} trapped`:'' );el('hoverPreviewText').textContent=rulesText(card.color)+(card.trapped&&card.trapped.length?'\n\n'+trappedSummary(card):'');el('hoverPreview').classList.remove('hidden')}
-function hideHover(){hoverTimer=setTimeout(()=>el('hoverPreview').classList.add('hidden'),80)}
-function showDiscardPreview(player){let prev=el('discardPreview');el('discardPreviewTitle').textContent=(player===PLAYER?'Your':'Bot')+' discard pile';let c=el('discardPreviewCards');c.innerHTML='';if(P(player).discard.length===0)c.appendChild(emptyCard('Empty'));P(player).discard.slice().reverse().forEach(card=>c.appendChild(cardEl(card,()=>showCard(card),true)));let rect=el(player===PLAYER?'playerDiscardPile':'botDiscardPile').getBoundingClientRect();prev.style.left=Math.max(8,Math.min(window.innerWidth-540,rect.left))+'px';prev.style.top=Math.max(80,Math.min(window.innerHeight-430,rect.top))+'px';prev.classList.remove('hidden')}
-function hideDiscardPreview(){el('discardPreview').classList.add('hidden')}
-function modal(title,text){hideHover();hideDiscardPreview();el('modalTitle').textContent=title;el('modalText').textContent=text||'';el('modalCardArea').innerHTML='';el('modalActions').innerHTML='';el('modal').classList.remove('hidden');el('showModalBtn').classList.add('hidden');pendingModal=true}
-function closeModal(){el('modal').classList.add('hidden');el('showModalBtn').classList.add('hidden');pendingModal=false;autoEndCheck()}
-function hideModal(){if(!pendingModal)return;el('modal').classList.add('hidden');el('showModalBtn').classList.remove('hidden')}
-function showModalAgain(){if(!pendingModal)return;el('modal').classList.remove('hidden');el('showModalBtn').classList.add('hidden')}
-function addAction(txt,cls,fn){let b=document.createElement('button');b.textContent=txt;if(cls)b.className=cls;b.onclick=()=>{sfx('click');fn&&fn()};el('modalActions').appendChild(b)}
-function notice(title,text,after){modal(title,text);addAction('OK','',()=>{closeModal();after&&after()})}
-function chooseCards(title,text,entries,cb,cancel=true){modal(title,text);let area=el('modalCardArea');entries.forEach(e=>{let d=document.createElement('div');d.className='choiceCard';d.onmouseenter=()=>showHover(e.card);d.onmouseleave=hideHover;let im=document.createElement('img');im.src=IMG[e.card.color];d.appendChild(im);let b=document.createElement('b');b.textContent=e.card.color;d.appendChild(b);let s=document.createElement('small');s.textContent=e.note||rulesText(e.card.color);d.appendChild(s);d.onclick=()=>{sfx('click');closeModal();cb(e)};area.appendChild(d)});if(cancel)addAction('Cancel','grayBtn',closeModal);addAction('Hide Popup','grayBtn',hideModal)}
-function showCard(card){modal(card.color,rulesText(card.color));el('modalCardArea').appendChild(cardEl(card,()=>{}));if(card.trapped&&card.trapped.length){let list=document.createElement('div');list.className='trappedList';list.innerHTML='<h3>Cards trapped under this Yellow</h3>';card.trapped.forEach(c=>list.appendChild(cardEl(c,()=>showCard(c),true)));el('modalCardArea').appendChild(list)}addAction('Close','grayBtn',closeModal);addAction('Hide Popup','grayBtn',hideModal)}
-function showDiscardModal(player){chooseCards((player===PLAYER?'Your':'Bot')+' discard pile','Cards in discard pile. Pink can remove opponent discard cards. Green can recover from your discard.',P(player).discard.slice().reverse().map((card,index)=>({card,index,note:'Discard pile'})),()=>{},true)}
-function chooseHand(){if(!game||game.current!==PLAYER||game.actionUsed||game.resolving||game.over)return;let entries=P(PLAYER).hand.map((card,index)=>({card,index})).filter(e=>canUseTurnCard(PLAYER,e.index));if(!entries.length){notice('No Playable Action','You have no card/action you can use. Your turn ends automatically.',()=>endTurn(true));return}chooseCards('Choose a card','Hover to read. Select a card from your hand.',entries,e=>showHandOptions(e.card,e.index))}
-function canUseTurnCard(player,index){return game&&game.current===player&&!game.actionUsed&&!game.resolving&&!game.over&&P(player).hand[index]}
-function hasPlayableAction(player){return !game.actionUsed&&!game.resolving&&!game.over&&P(player).hand.length>0}
-function hasDiscard(color){return color==='Red'||color==='Green'||color==='Black'}
-function showHandOptions(card,index){modal(card.color,rulesText(card.color));el('modalCardArea').appendChild(cardEl(card,()=>{}));addAction('Add to Field of Play','',()=>{closeModal();playCard(PLAYER,index)});if(card.color==='Red')addAction('Use Red Discard: Draw 2','redBtn',()=>{closeModal();useDiscard(PLAYER,index,false)});if(card.color==='Green')addAction('Use Green Discard: Top 5','greenBtn',()=>{closeModal();useDiscard(PLAYER,index,false)});if(card.color==='Black')addAction('Use Black Discard: Return a field card','blackBtn',()=>{closeModal();blackReturnField(PLAYER,index,()=>finishAction(PLAYER),true)});addAction('Hide Popup','grayBtn',hideModal);addAction('Cancel','grayBtn',closeModal)}
-function playCard(player,index){if(index<0||index>=P(player).hand.length)return;let card=P(player).hand.splice(index,1)[0];card.controller=player;game.actionUsed=true;game.resolving=true;log(`${P(player).name} adds ${card.color} to the field.`);sfx('play');reactionWindow({type:'field',player,card},()=>{P(player).field.push(card);log(`${card.color} enters ${P(player).name}'s field.`);resolveField(card,player,()=>finishAction(player))});render()}
-function useDiscard(player,index,offTurnRed=false){if(index<0||index>=P(player).hand.length)return;let card=P(player).hand.splice(index,1)[0];P(card.owner).discard.push(card);if(card.color==='Red')P(player).redUsed=true;if(!offTurnRed){game.actionUsed=true;game.resolving=true}log(`${P(player).name} uses ${card.color} Discard Action${offTurnRed?' on opponent turn':''}.`);sfx('discard');let finish=()=>{if(offTurnRed){render();return}else finishAction(player)};let resolve=()=>{if(card.color==='Red'){draw(player,2,true);finish();return} if(card.color==='Green'){greenDiscard(player,finish);return} if(card.color==='Black'){finish();return} finish()}; if(offTurnRed)resolve(); else reactionWindow({type:'discard',player,card},resolve);render()}
-function greenDiscard(player,done=()=>{}){let top=[];for(let i=0;i<5&&P(player).deck.length;i++)top.push(P(player).deck.pop());if(!top.length){log(`${P(player).name} has no cards to look at for Green Discard.`);done();return}if(player===BOT){P(player).hand.push(top.shift());P(player).deck.unshift(...top);log('Warren Bot keeps 1 from the top 5.');done();return}chooseCards('Green Discard Action','Choose 1 card to put into your hand. The rest go to the bottom of your deck.',top.map((card,index)=>({card,index,note:'Top of deck'})),e=>{P(player).hand.push(top[e.index]);top.splice(e.index,1);P(player).deck.unshift(...top);log('You keep 1 card from Green Discard and put the rest on the bottom.');sfx('return');render();done()},false)}
-function reactionWindow(ctx,continueResolve){let reactor=O(ctx.player); if(reactor===BOT){let r=botReaction(ctx); if(r.acted){game.resolving=false;render();modal('Warren Bot Reacted!',`Attempted ability:\n${contextText(ctx)}\n\n${r.message}`);el('modalCardArea').appendChild(cardEl(ctx.card,()=>showCard(ctx.card)));addAction('OK','',()=>{closeModal();if(ctx.player===PLAYER){status('Warren Bot countered your play. Your turn ends.');endTurn(true)}});addAction('Hide Popup','grayBtn',hideModal);return}continueResolve();return}
-  let choices=[];let blueIdx=P(PLAYER).hand.findIndex(c=>c.color==='Blue');if(ctx.type==='field'&&ctx.player===BOT&&blueIdx>=0&&P(PLAYER).hand.length>=2)choices.push({kind:'blue',index:blueIdx});let blackIdx=P(PLAYER).hand.findIndex(c=>c.color==='Black');if(blackIdx>=0)choices.push({kind:'black',index:blackIdx});let redIdx=P(PLAYER).hand.findIndex(c=>c.color==='Red');if(ctx.player===BOT&&redIdx>=0&&!P(PLAYER).redUsed)choices.push({kind:'red',index:redIdx});if(!choices.length){continueResolve();return}
-  modal('Response Window',`${contextText(ctx)}\n\nChoose a response or let it happen. Only Blue and Black counter the played card. Red Discard only draws cards and does not stop the ability.`);el('modalCardArea').appendChild(cardEl(ctx.card,()=>showCard(ctx.card)));choices.forEach(ch=>{if(ch.kind==='blue')addAction('Blue Reaction: Counter this card','blueBtn',()=>{closeModal();chooseBlueOther(PLAYER,ch.index,ctx)});if(ch.kind==='black')addAction('Black Reaction / Discard','blackBtn',()=>{closeModal();blackReactionMenu(PLAYER,ch.index,ctx,continueResolve)});if(ch.kind==='red')addAction('Red Discard: Draw 2 only','redBtn',()=>{closeModal();useDiscard(PLAYER,ch.index,true);reactionWindow(ctx,continueResolve)})});addAction('Let it happen','grayBtn',()=>{closeModal();continueResolve()});addAction('Hide Popup','grayBtn',hideModal)}
-function chooseBlueOther(player,blueIdx,ctx){let entries=P(player).hand.map((card,index)=>({card,index,note:'Discard with Blue'})).filter(e=>e.index!==blueIdx);if(!entries.length)return;chooseCards('Blue Reaction','Choose any other card from your hand to discard with Blue. This counters the previously played card.',entries,e=>blueCounter(player,blueIdx,e.index,ctx),false)}
-function blueCounter(player,blueIdx,otherIdx,ctx){let blue=P(player).hand.splice(blueIdx,1)[0]; if(otherIdx>blueIdx)otherIdx--; let other=P(player).hand.splice(otherIdx,1)[0]; P(blue.owner).discard.push(blue);P(other.owner).discard.push(other);P(ctx.card.owner).discard.push(ctx.card);log(`${P(player).name} uses Blue Reaction, discarding Blue and ${other.color}, to counter ${ctx.card.color}.`);sfx('counter');game.resolving=false;render();if(ctx.player===BOT)botEndTurn()}
-function blackReactionMenu(player,blackIdx,ctx,continueResolve){modal('Black Reaction / Discard','Declare the target before resolving Black. Choose one option.');el('modalCardArea').appendChild(cardEl(P(player).hand[blackIdx],()=>{}));if(ctx.type==='field')addAction('Counter played card: return it to player hand','blackBtn',()=>{closeModal();blackCounterToHand(player,blackIdx,ctx)});addAction('Return 1 field card to owner hand','blackBtn',()=>{closeModal();blackReturnField(player,blackIdx,continueResolve,false)});addAction('Cancel','grayBtn',()=>{closeModal();reactionWindow(ctx,continueResolve)});addAction('Hide Popup','grayBtn',hideModal)}
-function blackCounterToHand(player,blackIdx,ctx){let black=P(player).hand.splice(blackIdx,1)[0];P(black.owner).discard.push(black);P(ctx.card.owner).hand.push(ctx.card);log(`${P(player).name} uses Black to counter ${ctx.card.color} and return it to its player's hand.`);sfx('counter');game.resolving=false;render();if(ctx.player===BOT)botEndTurn()}
-function blackReturnField(player,blackIdx,after,asTurnAction=false){let targets=P(PLAYER).field.map((card,index)=>({card,index,owner:PLAYER,note:'Your field'})).concat(P(BOT).field.map((card,index)=>({card,index,owner:BOT,note:'Bot field'})));if(!targets.length){notice('No Target','There is no field card to return.',after);return}chooseCards('Black: Declare Target','Choose 1 card from the field of play to return to its owner\'s hand.',targets,e=>{let black=P(player).hand.splice(blackIdx,1)[0];P(black.owner).discard.push(black);returnFieldToHand(e.owner,e.index,true,()=>{if(asTurnAction)after();else after&&after()})},false)}
-function botReaction(ctx){
-  // Bot reactions are intentionally strict:
-  // only Blue and Black cards from the BOT'S HAND can react/counter a played field card.
-  // Yellow, Pink, Red, and Green never act as bot reactions, and field cards are never used as reactions.
-  if(ctx.type!=='field'||ctx.player!==PLAYER)return{acted:false};
-  let blueIdx=P(BOT).hand.findIndex(c=>c.color==='Blue');
-  if(blueIdx>=0&&P(BOT).hand.length>=2&&Math.random()<0.38){
-    let other=P(BOT).hand.findIndex((c,i)=>i!==blueIdx);
-    let blue=P(BOT).hand.splice(blueIdx,1)[0];
-    if(other>blueIdx)other--;
-    let oc=P(BOT).hand.splice(other,1)[0];
-    P(blue.owner).discard.push(blue);
-    P(oc.owner).discard.push(oc);
-    P(ctx.card.owner).discard.push(ctx.card);
-    log(`Warren Bot uses BLUE from hand as a Reaction, discarding Blue and ${oc.color}, to counter your ${ctx.card.color}. ${oc.color} is only the extra discard; its ability does not happen.`);
-    sfx('counter');
-    return{acted:true,message:`Warren Bot used Blue Reaction from hand. It discarded Blue plus ${oc.color} as the required extra card. ${oc.color} did not use any ability. Your ${ctx.card.color} was countered, went to discard, and its ability did not happen.`}
+  if(game.pending&&game.pending.type==='target'&&mode==='solo'&&game.pending.player===OPP){
+    autoProgressTimer=setTimeout(()=>{if(game&&game.pending&&game.pending.type==='target'&&game.pending.player===OPP){chooseTarget(OPP,game.pending.targetType,0);render();sync();scheduleAutoProgress()}},550);
+    return;
   }
-  let blackIdx=P(BOT).hand.findIndex(c=>c.color==='Black');
-  if(blackIdx>=0&&Math.random()<0.22){
-    let black=P(BOT).hand.splice(blackIdx,1)[0];
-    P(black.owner).discard.push(black);
-    P(ctx.card.owner).hand.push(ctx.card);
-    log(`Warren Bot uses BLACK from hand as a Reaction to counter your ${ctx.card.color} and return it to your hand.`);
-    sfx('counter');
-    return{acted:true,message:`Warren Bot used Black Reaction from hand. Your ${ctx.card.color} was countered, returned to your hand, and its ability did not happen.`}
+
+  if(!game.pending&&!game.over){
+    if(mode==='solo'&&game.current===OPP){
+      autoProgressTimer=setTimeout(()=>{botTurn()},650);
+      return;
+    }
+    if(game.actionUsed){
+      autoProgressTimer=setTimeout(()=>{if(game&&!game.pending&&!game.over&&game.actionUsed){endTurn(game.current);render();sync();scheduleAutoProgress()}},650);
+      return;
+    }
+    if(mode==='online'&&isHost&&!hasPlayable(game.current)){
+      autoProgressTimer=setTimeout(()=>{if(game&&!game.pending&&!game.over&&!hasPlayable(game.current)){endTurn(game.current);render();sync();scheduleAutoProgress()}},650);
+    }else{
+      autoEndCheck();
+    }
   }
-  return{acted:false}
 }
-function greenField(player,done){if(!P(player).discard.length){log('Green has no card in discard to return.');done();return}if(player===BOT){let c=P(player).discard.pop();P(player).hand.push(c);log(`${P(player).name} returns ${c.color} from discard to hand.`);sfx('return');done();return}let entries=P(player).discard.map((card,index)=>({card,index,note:'Your discard pile'})).reverse();chooseCards('Green Field of Play','Choose 1 card from your discard pile to return to your hand.',entries,e=>{let c=P(player).discard.splice(e.index,1)[0];P(player).hand.push(c);log(`You return ${c.color} from discard to hand with Green.`);sfx('return');render();done()},false)}
-function resolveField(card,player,done){if(card.color==='Red'){let targets=P(O(player)).field.map((c,i)=>({card:c,index:i,owner:O(player),note:'Opponent field'}));if(!targets.length){log('Red has no target.');done();return}chooseTargetAuto(player,'Red Field','Choose opponent field card to discard.',targets,e=>{discardField(e.owner,e.index);done()})}else if(card.color==='Blue'){draw(player,1,true);done()}else if(card.color==='Pink'){pinkField(player,done)}else if(card.color==='Green'){greenField(player,done)}else if(card.color==='Yellow'){yellowField(card,player,done)}else if(card.color==='Black'){blackField(card,player,done)}}
-function chooseTargetAuto(player,title,text,targets,cb){if(player===BOT)cb(targets[0]);else chooseCards(title,text,targets,cb,false)}
-function discardField(owner,index){let c=P(owner).field.splice(index,1)[0];releaseTrapped(c,true);P(c.owner).discard.push(c);log(`${c.color} goes to discard.`);sfx('discard');render()}
-function pinkField(player,done){let enemy=O(player);if(player===BOT){if(P(enemy).hand.length){let i=Math.floor(Math.random()*P(enemy).hand.length);let c=P(enemy).hand.splice(i,1)[0];P(c.owner).discard.push(c);log(`Warren Bot's Pink discards ${c.color} from your hand.`);sfx('discard')}done();return}modal('Pink Field','Choose one Pink effect.');addAction('Reveal opponent hand, discard 1','',()=>{closeModal();let choices=P(enemy).hand.map((card,index)=>({card,index,note:'Opponent hand'}));if(!choices.length){log('Opponent has no cards in hand.');done();return}chooseCards('Opponent Hand','Choose 1 revealed card to discard.',choices,e=>{let c=P(enemy).hand.splice(e.index,1)[0];P(c.owner).discard.push(c);log(`Pink discards ${c.color} from opponent hand.`);sfx('discard');done()},false)});addAction('Remove up to 2 from opponent discard','',()=>{closeModal();let count=Math.min(2,P(enemy).discard.length);for(let i=0;i<count;i++)P(enemy).removed.push(P(enemy).discard.pop());log(`Pink removes ${count} card(s) from opponent discard.`);sfx('discard');done()});addAction('Hide Popup','grayBtn',hideModal)}
-function yellowField(yellow,player,done){let enemy=O(player);if(player===BOT){if(P(enemy).field.length){let trapped=P(enemy).field.splice(0,1)[0];yellow.trapped.push(trapped);log(`Warren Bot's Yellow traps your ${trapped.color}.`);sfx('trap')}done();return}modal('Yellow Field','Choose one Yellow effect.');el('modalCardArea').appendChild(cardEl(yellow,()=>{}));addAction('Retrigger one non-Black field effect','',()=>{closeModal();let valid=P(player).field.map((card,index)=>({card,index,owner:player,note:'Your field'})).filter(e=>e.card!==yellow&&e.card.color!=='Black');if(!valid.length){log('No valid card to retrigger.');done();return}chooseCards('Yellow Retrigger','Choose a non-Black card to retrigger.',valid,e=>{log(`Yellow retriggers ${e.card.color}.`);resolveField(e.card,player,done)},false)});addAction('Trap opponent field card','',()=>{closeModal();let targets=P(enemy).field.map((card,index)=>({card,index,owner:enemy,note:'Opponent field'}));if(!targets.length){log('No opponent card to trap.');done();return}chooseCards('Yellow Trap','Choose opponent card to trap under Yellow. The trapped card will be shown on Yellow with a + badge.',targets,e=>{let trapped=P(e.owner).field.splice(e.index,1)[0];yellow.trapped.push(trapped);log(`Yellow traps ${trapped.color}.`);sfx('trap');render();done()},false)});addAction('Hide Popup','grayBtn',hideModal)}
-function blackField(black,player,done){let enemy=O(player);let targets=P(enemy).field.map((card,index)=>({card,index,owner:enemy,note:'Opponent field'}));if(!targets.length){log('Black has no target.');done();return}chooseTargetAuto(player,'Black Field','Choose opponent field card to swap with.',targets,e=>{let blackIndex=P(player).field.indexOf(black);if(blackIndex>=0){let other=P(e.owner).field.splice(e.index,1)[0];P(player).field.splice(blackIndex,1,other);P(e.owner).field.push(black);other.controller=player;black.controller=e.owner;log(`${P(player).name} swaps Black with ${other.color}.`);sfx('bounce')}done()})}
-function returnFieldToHand(owner,index,retrigger,after){let c=P(owner).field.splice(index,1)[0];P(c.owner).hand.push(c);log(`${c.color} returns to owner's hand.`);sfx('bounce');releaseTrapped(c,retrigger,after);render()}
-function releaseTrapped(host,retrigger,after){if(!host.trapped||!host.trapped.length){after&&after();return}let list=host.trapped.slice();host.trapped=[];function next(i){if(i>=list.length){after&&after();return}let c=list[i];P(c.owner).field.push(c);c.controller=c.owner;log(`${c.color} returns from Yellow trap.`);sfx('return');if(retrigger){log(`${c.color} retriggers its Field ability.`);resolveField(c,c.controller,()=>next(i+1))}else next(i+1)}next(0)}
-function finishAction(player){game.resolving=false;render();checkWin(player);if(game.over)return;if(player===BOT)botEndTurn();else{status('Action complete. Your turn ends automatically.');setTimeout(()=>endTurn(true),400)}}
-function checkWin(player){let field=P(player).field.map(c=>c.color);let needed=['Red','Blue','Green','Yellow','Pink'];let rainbow=needed.every(c=>field.includes(c));let five=needed.some(c=>field.filter(x=>x===c).length>=5);if(rainbow||five){game.over=true;let reason=rainbow?'one of each color':'five of one color';status(`${P(player).name} wins!`);log(`GAME OVER: ${P(player).name} wins with ${reason}.`);sfx(player===PLAYER?'winUser':'winBot');render();showGameOver(player,reason)}}
-function showGameOver(winner,reason){let won=winner===PLAYER;modal(won?'Congratulations — You Win!':'You Lost — Warren Bot Wins!',won?`You won with ${reason}!`:`Warren Bot won with ${reason}. Start a new game and try again.`);let img=document.createElement('img');img.className='gameOverLogo';img.src='assets/logo.png';img.alt='Chromatic Clash logo';el('modalCardArea').appendChild(img);let p=document.createElement('p');p.className='gameOverText';p.textContent=won?'Great play! Ready for another round?':'The bot got this one. Ready for a rematch?';el('modalCardArea').appendChild(p);addAction('New Game','',newGame);addAction('Close','grayBtn',closeModal)}
-function autoEndCheck(){if(!game||game.over||game.resolving||game.current!==PLAYER||game.actionUsed)return;if(!hasPlayableAction(PLAYER)){notice('No Playable Action','You have no card/action you can use. Your turn ends automatically.',()=>endTurn(true))}}
-function endTurn(auto=false){if(game.current!==PLAYER||game.over||game.resolving)return;checkWin(PLAYER);if(game.over)return;game.current=BOT;game.actionUsed=false;P(BOT).redUsed=false;if(game.firstTurn)game.firstTurn=false;status(auto?'Your turn ended. Warren Bot turn.':'Warren Bot turn.');sfx('turn');render();setTimeout(botTurn,650)}
-function botTurn(){if(game.over)return;P(BOT).redUsed=false;draw(BOT,1,true);let idx=botPickCard();if(idx<0||!hasPlayableAction(BOT)){log('Warren Bot has no playable action. Its turn ends automatically.');notice('Bot Turn Ends','Warren Bot has no playable action, so its turn ends automatically.',botEndTurn);return}playCard(BOT,idx)}
-function botPickCard(){let priority=['Yellow','Red','Black','Pink','Green','Blue'];for(let color of priority){let i=P(BOT).hand.findIndex(c=>c.color===color);if(i>=0)return i}return P(BOT).hand.length?0:-1}
-function botEndTurn(){checkWin(BOT);if(game.over)return;game.current=PLAYER;game.actionUsed=false;game.resolving=false;P(PLAYER).redUsed=false;if(game.firstTurn)game.firstTurn=false;draw(PLAYER,1,true);status('Your turn. Hover to read. Click/tap or drag a card to your field to choose an ability.');render();autoEndCheck()}
-function showRules(){modal('Chromatic Clash Rules','Watch the quick how-to-play video below, then use the card guide underneath as a reminder.\n\nSetup: Each player starts with 3 cards. The first player does not draw on the first turn.\n\nTurn: Draw 1 card, then take 1 action: add 1 card to your field OR use 1 Discard Action. After your action, your turn ends automatically.\n\nReactions: Reactions can be used in response to a card or ability. Only Blue and Black have counter reactions. The bot can only react with Blue or Black from its hand; Yellow, Pink, Red, and Green never react. Red Discard only draws cards.\n\nWin: Have Red, Blue, Pink, Green, and Yellow on your field, or have 5 cards of one non-Black color.');
-  let videoWrap=document.createElement('div');
-  videoWrap.className='rulesVideoWrap';
-  videoWrap.innerHTML='<iframe class="rulesVideo" width="560" height="315" src="https://www.youtube.com/embed/VZUa1rzIzMo?si=OSNtGFgHMY3pPMcu&rel=0&playsinline=1" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe><p class="videoFallback">If the video shows Error 153 while testing from a downloaded file, upload the game to GitHub Pages/Google Sites or <a href="https://youtu.be/VZUa1rzIzMo" target="_blank" rel="noopener">open the rules video on YouTube</a>.</p>';
-  el('modalCardArea').appendChild(videoWrap);
-  let grid=document.createElement('div');grid.className='rulesGrid';COLORS.forEach(color=>{let item=document.createElement('div');item.className='ruleCard';item.innerHTML=`<img src="${IMG[color]}" alt="${color}"><h3>${color}</h3><p>${rulesText(color)}</p>`;grid.appendChild(item)});el('modalCardArea').appendChild(grid);addAction('Close','grayBtn',closeModal);addAction('Hide Popup','grayBtn',hideModal)}
-window.addEventListener('pointerdown',()=>{unlockSound();startMusic()},{once:true});
-window.addEventListener('DOMContentLoaded',()=>{el('newGameBtn').onclick=newGame;el('chooseBtn').onclick=chooseHand;el('endTurnBtn').onclick=()=>endTurn(false);el('rulesBtn').onclick=showRules;el('closeModal').onclick=closeModal;el('hideModal').onclick=hideModal;el('showModalBtn').onclick=showModalAgain;el('logToggleBtn').onclick=showLog;el('hideLogBtn').onclick=hideLog;hideLog();el('muteBtn').onclick=()=>{muted=!muted;el('muteBtn').textContent=muted?'Sound: Off':'Sound: On'; if(muted&&bgMusic)bgMusic.pause(); if(!muted)startMusic()};['playerDiscardPile','botDiscardPile'].forEach(id=>{let player=id.startsWith('player')?PLAYER:BOT;el(id).onmouseenter=()=>showDiscardPreview(player);el(id).onmouseleave=hideDiscardPreview;el(id).onclick=()=>showDiscardModal(player)});newGame();setTimeout(showRules,200)})
-})();
+function checkWin(seat){let field=p(seat).field.map(c=>c.color);let needed=['Red','Blue','Green','Yellow','Pink'];let rainbow=needed.every(c=>field.includes(c));let five=needed.some(c=>field.filter(x=>x===c).length>=5);if(rainbow||five){game.over=true;game.winner=seat;game.winReason=rainbow?'one of each non-black color':'five of one non-black color';log(`${p(seat).name} wins with ${game.winReason}.`);snd('sounds/win.mp3');showGameOver(seat)}}
+function showGameOver(winner){render();let won=winner===localSeat;modal(won?'Congratulations — You Win!':'You Lost',won?`You won with ${game.winReason}!`:`${p(winner).name} won with ${game.winReason}.`);let img=document.createElement('img');img.src='assets/logo.png';img.className='gameOverLogo';$('modalContent').appendChild(img);addAction('Instant Rematch','',requestRematch);addAction('New Solo Game','',()=>{mode='solo';localSeat=0;startGame();closeModal()});addAction('Close','gray',closeModal);$('rematchBtn').classList.remove('hidden')}
+function requestRematch(){if(mode==='solo'){startGame();closeModal();return}rematchRequested[localSeat]=true;log('You requested a rematch.');status('Rematch requested. Waiting for other player.');if(isHost){if(rematchRequested[0]&&rematchRequested[1]){startGame();closeModal()}else sync()}else conn?.send({type:'rematch',player:localSeat});render()}
+function render(){if(!game)return;let me=p(localSeat), them=p(opp(localSeat));$('opponentName').textContent=mode==='solo'?'Warren Bot':'Opponent';$('oppFieldName').textContent=mode==='solo'?'Warren Bot Field':'Opponent Field';$('playerDeck').textContent=me.deck.length;$('playerHandCount').textContent=me.hand.length;$('playerDiscard').textContent=me.discard.length;$('oppDeck').textContent=them.deck.length;$('oppHand').textContent=them.hand.length;$('oppDiscard').textContent=them.discard.length;renderHand();renderOppHand();renderField('playerField',me.field,true);renderField('oppField',them.field,false);renderPile('playerDiscardTop',me.discard);renderPile('oppDiscardTop',them.discard);$('playerTurnBadge').textContent=game.current===localSeat?'Your Turn':'Waiting';$('oppTurnBadge').textContent=game.current!==localSeat?'Their Turn':'Waiting';$('playerTurnBadge').classList.toggle('active',game.current===localSeat||game.over);$('oppTurnBadge').classList.toggle('active',game.current!==localSeat||game.over);$('chooseBtn').disabled=!canAct(localSeat);$('endTurnBtn').disabled=!(game.current===localSeat&&!game.pending&&!game.over);if(game.pending)renderPending();else if(game.current===localSeat)status('Your turn.');else status(mode==='solo'?'Warren Bot turn.':'Waiting for opponent.');if(game.over)$('rematchBtn').classList.remove('hidden');else $('rematchBtn').classList.add('hidden');scheduleAutoProgress()}
+function renderCard(c,clickable=false,handler=null){let d=document.createElement('div');d.className='card'+(clickable?' selectable':'');d.style.backgroundImage=`url('${img(c)}')`;d.draggable=clickable;d.innerHTML=`<span class="label">${c.color}${c.trapped?.length?' • trapped '+c.trapped.length:''}</span>`;if(clickable)d.onclick=handler;d.ondragstart=e=>{e.dataTransfer.setData('text/plain',c.id)};return d}
+function renderHand(){let box=$('playerHand');box.innerHTML='';p(localSeat).hand.forEach((c,i)=>box.appendChild(renderCard(c,canAct(localSeat),()=>showHandOptions(i))));let pf=$('playerField');pf.ondragover=e=>{e.preventDefault();pf.classList.add('dragOver')};pf.ondragleave=()=>pf.classList.remove('dragOver');pf.ondrop=e=>{e.preventDefault();pf.classList.remove('dragOver');let id=e.dataTransfer.getData('text/plain');let i=p(localSeat).hand.findIndex(c=>c.id===id);if(i>=0)showHandOptions(i)}}
+function renderOppHand(){let box=$('opponentHand');box.innerHTML='';for(let i=0;i<p(opp(localSeat)).hand.length;i++){let d=document.createElement('div');d.className='cardBackMini';box.appendChild(d)}}
+function renderField(id,cards,own){let box=$(id);box.innerHTML='';cards.forEach((c,i)=>box.appendChild(renderCard(c,false)))}
+function renderPile(id,pile){$(id).style.backgroundImage=pile.length?`url('${img(pile[pile.length-1])}')`:`url('${BACK}')`}
+function showHandOptions(i){let c=p(localSeat).hand[i];modal(`${c.color} Card`,'Choose how to use this card.');let grid=document.createElement('div');grid.className='choiceGrid';let a=document.createElement('div');a.className='choiceCard';a.innerHTML=`<img src="${img(c)}"><button>Add to Field</button>`;a.querySelector('button').onclick=()=>{closeModal();sendMove({action:'play',index:i,kind:'field'})};grid.appendChild(a);if(cardCanDiscard(c)){let b=document.createElement('div');b.className='choiceCard';b.innerHTML=`<img src="${img(c)}"><button>Discard Action</button>`;b.querySelector('button').onclick=()=>{closeModal();sendMove({action:'play',index:i,kind:'discard'})};grid.appendChild(b)}$('modalContent').appendChild(grid)}
+function renderPending(){let pend=game.pending;if(pend.type==='stack'&&pend.reactFor===localSeat){
+  if(!hasReaction(localSeat)){
+    closeReactionModalOnly();
+    let top=stackTop();let playName=top?(top.kind==='field'?`${p(top.player).name}'s ${top.color} card`:`${p(top.player).name}'s ${top.color} Reaction`):'the play';
+    status(`No Blue or Black reaction in hand. ${playName} will resolve automatically.`);
+    return;
+  }
+  let h=p(localSeat).hand;let blues=h.map((c,i)=>[c,i]).filter(x=>x[0].color==='Blue');let blacks=h.map((c,i)=>[c,i]).filter(x=>x[0].color==='Black');let top=stackTop();let playName=top?(top.kind==='field'?`${p(top.player).name}'s ${top.color} card`:`${p(top.player).name}'s ${top.color} Reaction`):'the play';modal('Reaction Window',`${playName} is waiting to resolve. You may react with Blue or Black from your hand, or let it happen. Reactions can be reacted to, so this continues until no one reacts.`);blues.forEach(([c,i])=>{if(h.length>1)addAction('Use Blue Reaction','',()=>chooseBlueExtra(i))});blacks.forEach(([c,i])=>addAction('Use Black Reaction','',()=>{closeModal();sendMove({action:'blackReaction',blackIndex:i})}));addAction('Let It Happen','gray',()=>{closeModal();sendMove({action:'passReaction'})})
+}else if(pend.type==='stack'){
+  let top=stackTop();status(`${p(pend.reactFor).name} may react to ${top?top.color||'reaction':'the play'}.`)
+}else if(pend.type==='target'&&pend.player===localSeat){
+  showTargetChoices(pend);
+}}
+function showTargetChoices(pend){
+  let enemy=opp(localSeat);
+  let title='Choose Target', text='Choose a card.';
+  let cards=[], owner=enemy, type=pend.targetType;
+  if(type==='greenReturn'){
+    title='Green Field Ability'; text='Choose one card from your discard pile to return to your hand.'; cards=p(localSeat).discard; owner=localSeat;
+  }else if(type==='greenLook'){
+    title='Green Discard Action'; text='Choose one of these cards to put into your hand. The rest go on the bottom of your deck.'; cards=pend.cards||[]; owner=localSeat;
+  }else if(type==='pinkHandDiscard'){
+    title='Pink Field Ability'; text=`${p(enemy).name} reveals their hand. Choose one card to put into their discard pile.`; cards=p(enemy).hand; owner=enemy;
+  }else if(type==='pinkRemoveDiscard'){
+    title='Pink Field Ability'; text=`Choose one card from ${p(enemy).name}'s discard pile. It will remove that card and one more if available.`; cards=p(enemy).discard; owner=enemy;
+  }else if(type==='redRemove'){
+    title='Red Field Ability'; text='Choose one opponent field card to put into its owner’s discard pile.'; cards=p(enemy).field; owner=enemy;
+  }else if(type==='yellowTrap'){
+    title='Yellow Field Ability'; text='Choose one opponent field card to trap under Yellow.'; cards=p(enemy).field; owner=enemy;
+  }else if(type==='blackBounceEnemy'){
+    title='Black Discard Action'; text='Choose one field card to return to its owner’s hand.'; cards=p(enemy).field; owner=enemy;
+  }else if(type==='blackSwap'){
+    title='Black Field Ability'; text='Choose one opponent field card to swap control with Black.'; cards=p(enemy).field; owner=enemy;
+  }
+  modal(title,text);
+  let grid=document.createElement('div');grid.className='choiceGrid';
+  if(!cards.length){
+    let none=document.createElement('p');none.textContent='No valid cards to choose.';$('modalContent').appendChild(none);addAction('Continue','gray',()=>{closeModal();sendMove({action:'target',targetType:type,index:-1})});return;
+  }
+  cards.forEach((c,i)=>{let item=document.createElement('div');item.className='choiceCard';item.innerHTML=`<img src="${img(c)}"><button>Choose ${c.color}</button>`;item.querySelector('button').onclick=()=>{closeModal();sendMove({action:'target',targetType:type,index:i})};grid.appendChild(item)});
+  $('modalContent').appendChild(grid);
+}
+function closeReactionModalOnly(){if(!$('modal').classList.contains('hidden')&&$('modalTitle').textContent==='Reaction Window')closeModal()}
+function chooseBlueExtra(blueIndex){modal('Blue Reaction Cost','Choose one extra card from your hand to discard with Blue. The extra card ability does not happen.');let grid=document.createElement('div');grid.className='choiceGrid';p(localSeat).hand.forEach((c,i)=>{if(i===blueIndex)return;let item=document.createElement('div');item.className='choiceCard';item.innerHTML=`<img src="${img(c)}"><button>Discard ${c.color}</button>`;item.querySelector('button').onclick=()=>{closeModal();sendMove({action:'blueReaction',blueIndex,extraIndex:i})};grid.appendChild(item)});$('modalContent').appendChild(grid)}
+function chooseHand(){if(canAct(localSeat)&&p(localSeat).hand.length)showHandOptions(0)}
+function showRules(){modal('Chromatic Clash Rules','Watch the quick how-to-play video below, then use the card guide underneath as a reminder.');let video=document.createElement('div');video.className='rulesVideoWrap';video.innerHTML='<iframe class="rulesVideo" width="560" height="315" src="https://www.youtube.com/embed/VZUa1rzIzMo?si=OSNtGFgHMY3pPMcu&rel=0&playsinline=1" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe><p class="videoFallback">If the video shows Error 153 while testing locally, upload the game to GitHub Pages or open the video on YouTube.</p>';$('modalContent').appendChild(video);let text=document.createElement('p');text.textContent='Starting hand: 3 cards. First player skips first draw. On your turn draw 1, then add one card to field or use one discard action. Blue and Black can react from hand. You can react to a reaction, and the reaction chain continues until both players have no more reactions or let it happen. Win with Red, Blue, Green, Yellow, and Pink on field, or 5 of one non-black color.';$('modalContent').appendChild(text);addAction('Close','gray',closeModal)}
+function modal(title,text){$('modalTitle').textContent=title;$('modalText').textContent=text;$('modalContent').innerHTML='';$('modalActions').innerHTML='';$('modal').classList.remove('hidden')}
+function closeModal(){$('modal').classList.add('hidden')}
+function addAction(label,cls,fn){let b=document.createElement('button');b.textContent=label;if(cls==='gray')b.style.background='linear-gradient(#eee,#aaa)';b.onclick=fn;$('modalActions').appendChild(b)}
+window.addEventListener('DOMContentLoaded',()=>{$('soloBtn').onclick=()=>{mode='solo';localSeat=0;$('onlinePanel').classList.add('hidden');startGame();bg();showRules()};$('hostBtn').onclick=hostOnline;$('joinBtn').onclick=joinOnline;$('copyCodeBtn').onclick=()=>navigator.clipboard?.writeText($('roomCode').textContent);$('chooseBtn').onclick=chooseHand;$('endTurnBtn').onclick=()=>sendMove({action:'endTurn'});$('rematchBtn').onclick=requestRematch;$('rulesBtn').onclick=showRules;$('closeModal').onclick=closeModal;$('logToggleBtn').onclick=()=>{$('logBox').classList.remove('hidden');$('logToggleBtn').classList.add('hidden')};$('hideLogBtn').onclick=()=>{$('logBox').classList.add('hidden');$('logToggleBtn').classList.remove('hidden')};$('muteBtn').onclick=()=>setMuted(!muted);document.addEventListener('pointerdown',startBg,{passive:true});startGame();showRules()});
